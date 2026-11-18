@@ -26,7 +26,7 @@
   #scene{position:fixed; inset:0; width:100%; height:100%; height:100dvh; display:block; touch-action:none; cursor:grab}
   #scene:active{cursor:grabbing}
   /* controls: a slim vertical rail hugging the right edge, clear of the
-     trunk and the gifts in the centre */
+     tree in the centre */
   .bar{
     position:fixed; right:max(8px, env(safe-area-inset-right)); top:50%;
     transform:translateY(-50%);
@@ -143,15 +143,17 @@ function resize(){
   CX = W/2;
   /* Reserve space from the layout, not a guessed constant, so the scene
      composes the same on every phone:
-     - below: room for the flared trunk base, its roots and the snow piled
-       against them below groundY, plus a safe margin from the screen's
+     - below: there is no trunk any more — the cone floats on the night.
+       The 30° downward tilt pushes the cone's front bottom edge a little
+       below groundY (partly offset by the vertical foreshortening), so
+       reserve room for that edge plus a safe margin from the screen's
        bottom edge. The controls live on the side rail, so nothing needs
-       reserving for them here and they can never cover the trunk;
-     - above: room for the glowing signature and the tree-top star.
+       reserving for them here;
+     - above: room for the glowing signature and the tree-top ornament.
      The tree's own proportions (height from width, radius from height)
      are untouched. */
   var bottomMargin = 16;
-  var baseSpace = 46;  // trunk flare, roots and snowdrifts extend this far below groundY
+  var baseSpace = 56;  // tilted front bottom edge extends this far below groundY
   groundY = H - bottomMargin - baseSpace;
   var topReserve = Math.min(168, Math.max(118, H*0.19));
   treeH = Math.min(groundY - topReserve, W*1.04);
@@ -368,51 +370,110 @@ function drawSnowflake(x,y,size,rotA,alpha,glow){
   ctx.closePath(); ctx.stroke();
   ctx.restore();
 }
-function drawStar(x,y,r,rotA){
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rotA);
-  ctx.shadowColor='rgba(255,214,120,1)'; ctx.shadowBlur=26;
-  ctx.fillStyle='#ffe9a8';
-  ctx.beginPath();
+/* ================= tree-top ornament: dense particles =================
+   The star / moon / heart are no longer solid shapes: each is a tight
+   cloud of tiny particles sampled inside (and along the edge of) the
+   same silhouette, so the mark reads crisp instead of loose dust. */
+function pointInPoly(x,y,poly){
+  var inside=false;
+  for(var i=0,j=poly.length-1;i<poly.length;j=i++){
+    var xi=poly[i][0], yi=poly[i][1], xj=poly[j][0], yj=poly[j][1];
+    if(((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+function starPoly(){
+  var poly=[];
   for(var i=0;i<10;i++){
-    var rr=i%2? r*0.45 : r, a=i*Math.PI/5 - Math.PI/2;
-    i?ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr):ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);
+    var rr=i%2?0.45:1, a=i*Math.PI/5-Math.PI/2;
+    poly.push([Math.cos(a)*rr, Math.sin(a)*rr]);
   }
-  ctx.closePath(); ctx.fill(); ctx.restore();
+  return poly;
 }
-/* crescent moon: cut on an offscreen sprite so the bite stays transparent
-   and the real night sky shows through it */
-var moonSprite=null;
-function drawMoon(x,y,r,rotA){
-  if(!moonSprite){
-    moonSprite=document.createElement('canvas'); moonSprite.width=moonSprite.height=160;
-    var m=moonSprite.getContext('2d');
-    m.fillStyle='#eae3ff';
-    m.beginPath(); m.arc(80,80,60,0,6.283); m.fill();
-    m.globalCompositeOperation='destination-out';
-    m.beginPath(); m.arc(106,64,50,0,6.283); m.fill();
+function heartPoly(){
+  var poly=[];
+  for(var i=0;i<72;i++){
+    var t=i/72*Math.PI*2, sn=Math.sin(t);
+    var hx=16*sn*sn*sn;
+    var hy=13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t);
+    poly.push([hx/17.5, -hy/17.5]);
   }
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rotA);
-  ctx.shadowColor='rgba(190,170,255,0.95)'; ctx.shadowBlur=24;
-  var d=r*2.6;
-  ctx.drawImage(moonSprite, -d/2, -d/2, d, d);
-  ctx.restore();
+  return poly;
 }
-function drawHeart(x,y,r,rotA){
-  ctx.save(); ctx.translate(x,y); ctx.rotate(rotA);
-  ctx.shadowColor='rgba(255,93,143,0.95)'; ctx.shadowBlur=26;
-  ctx.fillStyle='#ff6b9d';
-  ctx.beginPath();
-  ctx.moveTo(0, r*0.85);
-  ctx.bezierCurveTo(-r*1.25, r*0.05, -r*0.72, -r*0.92, 0, -r*0.32);
-  ctx.bezierCurveTo( r*0.72, -r*0.92,  r*1.25, r*0.05, 0,  r*0.85);
-  ctx.closePath(); ctx.fill(); ctx.restore();
+function polyEdge(poly){
+  return function(u){
+    var seg=u*poly.length, i=Math.floor(seg)%poly.length, f=seg-Math.floor(seg);
+    var a=poly[i], b=poly[(i+1)%poly.length];
+    return [a[0]+(b[0]-a[0])*f + rand(-0.012,0.012), a[1]+(b[1]-a[1])*f + rand(-0.012,0.012)];
+  };
 }
+function sampleOrnament(test, n, edgeFn){
+  var pts=[], guard=0;
+  while(pts.length<n && guard++<n*80){
+    var x=rand(-1.05,1.05), y=rand(-1.05,1.05);
+    if(!test(x,y)) continue;
+    pts.push({x:x, y:y, sz:rand(0.030,0.062), ph:Math.random()*6.28, lite:Math.random()});
+  }
+  if(edgeFn){
+    for(var i=0;i<110;i++){
+      var e=edgeFn(i/110);
+      pts.push({x:e[0], y:e[1], sz:rand(0.034,0.058), ph:Math.random()*6.28, lite:Math.random()});
+    }
+  }
+  return pts;
+}
+var ORNAMENT={
+  star: sampleOrnament(function(x,y){ return pointInPoly(x,y,starPoly()); }, 330, polyEdge(starPoly())),
+  heart: sampleOrnament(function(x,y){ return pointInPoly(x,y,heartPoly()); }, 360, polyEdge(heartPoly())),
+  moon: sampleOrnament(function(x,y){
+      if(x*x+y*y>1) return false;
+      var dx=x-0.43, dy=y+0.27;
+      return dx*dx+dy*dy > 0.833*0.833;
+    }, 300, function(u){
+      var a=u*Math.PI*2, x=Math.cos(a), y=Math.sin(a);
+      var dx=x-0.43, dy=y+0.27;
+      if(dx*dx+dy*dy < 0.833*0.833){ a+=0.9; x=Math.cos(a); y=Math.sin(a); }
+      return [x+rand(-0.012,0.012), y+rand(-0.012,0.012)];
+    })
+};
+var ORNAMENT_COLS={
+  star:['#ffd166','#ffe9a8','#fff6d8'],
+  moon:['#c9b8ff','#eae3ff','#ffffff'],
+  heart:['#ff5d8f','#ff8fab','#ffc2d4']
+};
+var ORNAMENT_HALO={
+  star:'rgba(255,214,120,0.30)', moon:'rgba(190,170,255,0.28)', heart:'rgba(255,93,143,0.28)'
+};
+function drawOrnament(kind, x, y, r, rotA, time){
+  var pts=ORNAMENT[kind], cols=ORNAMENT_COLS[kind];
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rotA);
+  var halo=ctx.createRadialGradient(0,0,0,0,0,r*1.5);
+  halo.addColorStop(0, ORNAMENT_HALO[kind]); halo.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(0,0,r*1.5,0,6.283); ctx.fill();
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];
+    ctx.globalAlpha=0.72+0.28*Math.sin(time*2.6+p.ph);
+    ctx.fillStyle=cols[p.lite<0.55?0:(p.lite<0.85?1:2)];
+    ctx.beginPath(); ctx.arc(p.x*r, p.y*r, Math.max(0.7, p.sz*r), 0, 6.283); ctx.fill();
+  }
+  ctx.restore(); ctx.globalAlpha=1;
+}
+function drawStar(x,y,r,rotA,time){ drawOrnament('star', x, y, r, rotA, time||0); }
+function drawMoon(x,y,r,rotA,time){ drawOrnament('moon', x, y, r, rotA, time||0); }
+function drawHeart(x,y,r,rotA,time){ drawOrnament('heart', x, y, r, rotA, time||0); }
+/* camera raised above the original eye level, looking down at the tree:
+   the angle between this view and the original side view is 30°.
+   Vertical lengths foreshorten by cos30°, and depth (z) leans into the
+   vertical by sin30° — a horizontal ring of the cone becomes an ellipse,
+   its front edge lower, its back edge higher. Every tree point, light
+   and orbiting crystal goes through this same projection. */
+var TILT_C=Math.cos(Math.PI/6), TILT_S=Math.sin(Math.PI/6);
 function project(p){
   var a=p.a + rot;
   var rad=p.r * maxR;
   var x3=Math.cos(a)*rad, z3=Math.sin(a)*rad;
   var persp=1 + z3/(treeH*2.6);
-  return { x:CX + x3*persp, y:treeTop + p.t*treeH, z:z3, s:persp };
+  return { x:CX + x3*persp, y:treeTop + p.t*treeH*TILT_C + z3*TILT_S, z:z3, s:persp };
 }
 function drawPineRow(baseY, hgt, alpha){
   ctx.save(); ctx.globalAlpha=alpha; ctx.fillStyle='#061423';
@@ -436,7 +497,9 @@ function drawCrystals(time, behind){
     var isBehind = Math.sin(cr.ang) < 0;
     if(isBehind !== behind) continue;
     var x = CX + Math.cos(cr.ang)*cr.orbitR*maxR;
-    var y = treeTop + cr.h*treeH*0.92 + 16 + Math.sin(time*0.9 + cr.bobPh)*8;
+    /* same 30° downward tilt as the tree: the orbit ring is an ellipse,
+       front crystals swing lower, back crystals higher */
+    var y = treeTop + (cr.h*treeH*0.92 + 16)*TILT_C + Math.sin(cr.ang)*cr.orbitR*maxR*TILT_S + Math.sin(time*0.9 + cr.bobPh)*8;
     var depthK=(Math.sin(cr.ang)+1)/2;
     var scale=0.55 + depthK*0.65;
     var a=cr.alpha*(0.35 + depthK*0.65);
@@ -482,79 +545,6 @@ function frame(now){
     ctx.fillStyle='rgba('+Math.round(th.r0+depthK*th.rK)+','+Math.round(gch)+','+Math.round(th.b0+depthK*th.bK)+','+(0.4+depthK*0.6)+')';
     ctx.beginPath(); ctx.arc(pt.x, pt.y, p.sz*pt.s*(0.8+depthK*0.5), 0, 6.283); ctx.fill();
   }
-  /* trunk — a real pine trunk: flared root base, plated bark with deep
-     vertical furrows, a knot, and snow caught on the root shoulders */
-  var tw=maxR*0.13, ty0=groundY-treeH*0.03, ty1=groundY+treeH*0.055, thgt=ty1-ty0;
-  var tsh=ctx.createRadialGradient(CX,groundY+22,4,CX,groundY+22,maxR*0.95);
-  tsh.addColorStop(0,'rgba(7,16,32,0.38)'); tsh.addColorStop(1,'rgba(7,16,32,0)');
-  ctx.save(); ctx.beginPath(); ctx.ellipse(CX,groundY+22,maxR*0.95,maxR*0.15,0,0,6.283); ctx.clip();
-  ctx.fillStyle=tsh; ctx.fillRect(CX-maxR,groundY+22-maxR*0.15,maxR*2,maxR*0.3); ctx.restore();
-  function trunkPath(){
-    ctx.beginPath();
-    ctx.moveTo(CX-tw*0.34,ty0); ctx.lineTo(CX+tw*0.34,ty0);
-    ctx.bezierCurveTo(CX+tw*0.52,ty0+thgt*0.45, CX+tw*0.62,ty0+thgt*0.72, CX+tw*1.05,ty1-2);
-    ctx.quadraticCurveTo(CX+tw*1.30,ty1+1, CX+tw*1.02,ty1+2.5);
-    ctx.lineTo(CX-tw*1.02,ty1+2.5);
-    ctx.quadraticCurveTo(CX-tw*1.30,ty1+1, CX-tw*1.05,ty1-2);
-    ctx.bezierCurveTo(CX-tw*0.62,ty0+thgt*0.72, CX-tw*0.52,ty0+thgt*0.45, CX-tw*0.34,ty0);
-    ctx.closePath();
-  }
-  var bark=ctx.createLinearGradient(CX-tw,0,CX+tw,0);
-  bark.addColorStop(0,'#1c0f06'); bark.addColorStop(0.3,'#4a2c15'); bark.addColorStop(0.52,'#6e4525'); bark.addColorStop(0.78,'#3c2412'); bark.addColorStop(1,'#170b03');
-  ctx.fillStyle=bark; trunkPath(); ctx.fill();
-  ctx.save(); trunkPath(); ctx.clip();
-  /* vertical light falloff: darker where it slips into the foliage and the snow */
-  var vshade=ctx.createLinearGradient(0,ty0,0,ty1);
-  vshade.addColorStop(0,'rgba(0,0,0,0.35)'); vshade.addColorStop(0.35,'rgba(0,0,0,0)'); vshade.addColorStop(1,'rgba(0,0,0,0.28)');
-  ctx.fillStyle=vshade; ctx.fillRect(CX-tw*1.4,ty0,tw*2.8,thgt+4);
-  /* deep furrows: wavy grooves that splay apart as the trunk flares */
-  ctx.lineCap='round';
-  var furrows=[[-0.78,2.6,0.50],[-0.52,1.8,0.42],[-0.30,2.2,0.50],[0.02,1.6,0.38],[0.30,2.4,0.50],[0.55,1.7,0.42],[0.80,2.8,0.50]];
-  for(var fi=0;fi<furrows.length;fi++){
-    var fx0=furrows[fi][0];
-    ctx.strokeStyle='rgba(12,5,1,'+furrows[fi][2]+')';
-    ctx.lineWidth=Math.max(1.1, tw*0.045*furrows[fi][1]);
-    ctx.beginPath();
-    ctx.moveTo(CX+tw*fx0*0.55, ty0+1);
-    ctx.bezierCurveTo(CX+tw*fx0*0.8, ty0+thgt*0.35, CX+tw*fx0*1.05, ty0+thgt*0.65, CX+tw*fx0*1.5, ty1-1);
-    ctx.stroke();
-  }
-  /* bark plates: short lit strokes between the furrows */
-  ctx.strokeStyle='rgba(214,164,110,0.20)'; ctx.lineWidth=Math.max(1,tw*0.055);
-  var plates=[[-0.62,0.16,0.30],[-0.14,0.30,0.26],[0.42,0.14,0.32],[0.68,0.42,0.24],[-0.40,0.55,0.28],[0.16,0.60,0.30],[0.52,0.72,0.22],[-0.68,0.74,0.20]];
-  for(var pi2=0;pi2<plates.length;pi2++){
-    var px=CX+tw*plates[pi2][0]*(0.6+plates[pi2][1]*0.5), py=ty0+thgt*plates[pi2][1], pl2=thgt*plates[pi2][2];
-    ctx.beginPath(); ctx.moveTo(px,py); ctx.quadraticCurveTo(px+tw*0.05,py+pl2*0.5,px-tw*0.02,py+pl2); ctx.stroke();
-  }
-  /* knot: concentric rings low on the trunk, one lit arc on its rim */
-  var kx=CX+tw*0.30, ky=ty0+thgt*0.52, kr=tw*0.17;
-  ctx.fillStyle='#2a1709'; ctx.beginPath(); ctx.ellipse(kx,ky,kr,kr*1.3,0.08,0,6.283); ctx.fill();
-  ctx.strokeStyle='rgba(16,8,2,0.65)'; ctx.lineWidth=Math.max(1,tw*0.045);
-  ctx.beginPath(); ctx.ellipse(kx,ky,kr*0.62,kr*0.85,0.08,0,6.283); ctx.stroke();
-  ctx.fillStyle='#120802'; ctx.beginPath(); ctx.ellipse(kx,ky,kr*0.30,kr*0.42,0.08,0,6.283); ctx.fill();
-  ctx.strokeStyle='rgba(226,182,128,0.35)';
-  ctx.beginPath(); ctx.ellipse(kx,ky,kr*1.25,kr*1.6,0.08,4.2,5.6); ctx.stroke();
-  /* warm rim from the tree lights along the right edge */
-  var rim=ctx.createLinearGradient(CX+tw*0.2,0,CX+tw*0.9,0);
-  rim.addColorStop(0,'rgba(255,198,112,0)'); rim.addColorStop(1,'rgba(255,198,112,0.32)');
-  ctx.fillStyle=rim; ctx.fillRect(CX+tw*0.2,ty0,tw*0.75,thgt+4);
-  ctx.restore();
-  ctx.strokeStyle='rgba(8,3,0,0.55)'; ctx.lineWidth=1.2; trunkPath(); ctx.stroke();
-  /* roots gripping the ground, half-buried in the drift */
-  ctx.fillStyle='#3a2110';
-  ctx.beginPath(); ctx.ellipse(CX-tw*1.02,ty1+1,tw*0.30,tw*0.13,-0.25,0,6.283); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(CX+tw*1.02,ty1+1,tw*0.30,tw*0.13,0.25,0,6.283); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(CX,ty1+2.5,tw*0.34,tw*0.12,0,0,6.283); ctx.fill();
-  /* snow drifted against the base, resting on the root shoulders */
-  ctx.fillStyle='rgba(228,240,252,0.95)';
-  ctx.beginPath(); ctx.ellipse(CX,ty1+3,maxR*0.17,maxR*0.036,0,0,6.283); ctx.fill();
-  ctx.fillStyle='rgba(200,222,246,0.85)';
-  ctx.beginPath(); ctx.ellipse(CX-maxR*0.14,ty1+6,maxR*0.09,maxR*0.022,0,0,6.283); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(CX+maxR*0.15,ty1+5,maxR*0.08,maxR*0.02,0,0,6.283); ctx.fill();
-  ctx.fillStyle='rgba(240,248,255,0.9)';
-  ctx.beginPath(); ctx.ellipse(CX-tw*0.95,ty1-1,tw*0.30,tw*0.075,-0.25,0,6.283); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(CX+tw*0.95,ty1-1,tw*0.30,tw*0.075,0.25,0,6.283); ctx.fill();
-
   /* lights — chasing twinkle along the spiral */
   var cols=PALETTES[palette], lp=[];
   for(var L=0;L<lights.length;L++){ var pr2=project(lights[L]); pr2.p=lights[L]; lp.push(pr2); }
@@ -576,9 +566,9 @@ function frame(now){
      halo ring tinted to match */
   var pulse=1 + Math.sin(time*2.2)*0.10;
   var orad=Math.min(26, maxR*0.13)*pulse, orot=Math.sin(time*0.7)*0.16, ringCol='#ffe9a8';
-  if(treeTheme==='lavender'){ drawMoon(CX, treeTop-8, orad, orot); ringCol='#cdbcf5'; }
-  else if(treeTheme==='pink'){ drawHeart(CX, treeTop-8, orad, orot); ringCol='#ff9ebb'; }
-  else drawStar(CX, treeTop-8, orad, orot);
+  if(treeTheme==='lavender'){ drawMoon(CX, treeTop-8, orad, orot, time); ringCol='#cdbcf5'; }
+  else if(treeTheme==='pink'){ drawHeart(CX, treeTop-8, orad, orot, time); ringCol='#ff9ebb'; }
+  else drawStar(CX, treeTop-8, orad, orot, time);
   ctx.save(); ctx.globalAlpha=0.10+0.05*Math.sin(time*2.2); ctx.strokeStyle=ringCol; ctx.lineWidth=1.2;
   ctx.beginPath(); ctx.arc(CX, treeTop-8, 30*pulse+Math.sin(time*1.4)*3, 0, 6.283); ctx.stroke(); ctx.restore();
 
