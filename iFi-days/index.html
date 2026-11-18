@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&display=swap" rel="stylesheet" />
+<title>iFi days · 圣诞树</title>
+<style>
+  :root{
+    --bg0:#050d1a; --ink:#eaf2fb; --muted:#9db4cc;
+    --pill:rgba(13,28,48,.72); --pill-line:rgba(160,200,240,.22);
+    --accent:#7fd4ff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%; height:100dvh}
+  body{
+    margin:0; overflow:hidden; background:var(--bg0); color:var(--ink);
+    font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button{min-height:2.75rem}
+  #scene{position:fixed; inset:0; width:100%; height:100%; height:100dvh; display:block; touch-action:none; cursor:grab}
+  #scene:active{cursor:grabbing}
+  /* controls: a slim vertical rail hugging the right edge, clear of the
+     trunk and the gifts in the centre */
+  .bar{
+    position:fixed; right:max(8px, env(safe-area-inset-right)); top:50%;
+    transform:translateY(-50%);
+    display:flex; flex-direction:column; align-items:stretch; gap:6px;
+    z-index:5;
+  }
+  .group{
+    display:flex; flex-direction:column; gap:2px; padding:3px; border-radius:18px;
+    background:var(--pill); border:1px solid var(--pill-line);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  }
+  .group button{
+    border:0; background:transparent; color:var(--muted);
+    font-size:11.5px; letter-spacing:.03em; padding:5px 8px; border-radius:14px;
+    min-height:2rem;
+    cursor:pointer; white-space:nowrap; transition:color .2s, background .2s;
+  }
+  .group button[aria-pressed="true"]{background:rgba(127,212,255,.16); color:#fff}
+  .group button:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .hint{
+    position:fixed; top:max(12px, env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    z-index:5; font-size:12px; letter-spacing:.14em; color:rgba(214,232,250,.78);
+    text-shadow:0 1px 8px rgba(0,0,0,.9), 0 0 2px rgba(0,0,0,.9);
+    pointer-events:none; white-space:nowrap; transition:opacity 1.2s;
+  }
+  /* signature written into the sky itself: no pill, no glass, no border —
+     just self-lit handwritten letters breathing like a soft neon sign */
+  .signature{
+    position:fixed; left:50%; top:96px; z-index:6;
+    transform:translateX(-50%) rotate(-3deg);
+    font-family:"Caveat","Segoe Script","Bradley Hand",cursive;
+    font-weight:600;
+    font-size:clamp(36px, 11vw, 56px);
+    line-height:1.1; letter-spacing:.015em;
+    color:#fdf6e0; white-space:nowrap; pointer-events:none;
+    text-shadow:
+      0 0 6px rgba(255,244,200,.95),
+      0 0 16px rgba(255,220,130,.75),
+      0 0 34px rgba(255,196,92,.50),
+      0 0 64px rgba(150,205,255,.38);
+    animation:breathe 3.8s ease-in-out infinite;
+  }
+  @keyframes breathe{
+    0%,100%{
+      opacity:.68;
+      transform:translateX(-50%) rotate(-3deg) scale(.995);
+      text-shadow:
+        0 0 4px rgba(255,244,200,.80),
+        0 0 11px rgba(255,220,130,.50),
+        0 0 24px rgba(255,196,92,.30),
+        0 0 44px rgba(150,205,255,.22);
+    }
+    50%{
+      opacity:1;
+      transform:translateX(-50%) rotate(-3deg) scale(1.015);
+      text-shadow:
+        0 0 8px rgba(255,248,214,1),
+        0 0 20px rgba(255,224,140,.90),
+        0 0 42px rgba(255,200,100,.62),
+        0 0 78px rgba(150,205,255,.48);
+    }
+  }
+  @media (prefers-reduced-motion: reduce){ .signature{animation:none; opacity:.92} }
+  @media (max-width:560px){
+    .hint{font-size:11px; letter-spacing:.1em; max-width:94vw; white-space:normal; text-align:center}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="scene" aria-label="旋转的圣诞树，周围环绕着发光雪花，雪花飘满整个屏幕"></canvas>
+<div class="hint" id="hint">拖动旋转 · 点按树身有星光迸开</div>
+<div class="signature" id="signature" aria-hidden="true">FormyFei</div>
+
+<div class="bar" id="bar">
+  <div class="group" role="group" aria-label="彩灯配色">
+    <button type="button" data-palette="classic" aria-pressed="true">彩灯</button>
+    <button type="button" data-palette="gold" aria-pressed="false">暖金</button>
+    <button type="button" data-palette="ice" aria-pressed="false">冰晶</button>
+  </div>
+  <div class="group" role="group" aria-label="特效开关">
+    <button type="button" id="btnSnow" aria-pressed="true">飘雪</button>
+    <button type="button" id="btnOrbit" aria-pressed="true">环绕雪晶</button>
+    <button type="button" id="btnSpin" aria-pressed="true">旋转</button>
+    <button type="button" id="btnPause" aria-pressed="false">点按停顿</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var canvas = document.getElementById('scene');
+var ctx = canvas.getContext('2d');
+var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function rand(a,b){return a+Math.random()*(b-a);}
+
+var W=0, H=0, DPR=1, CX=0, groundY=0, treeTop=0, treeH=0, maxR=0;
+function viewportSize(){
+  var vv = window.visualViewport;
+  if (vv && vv.width > 0 && vv.height > 0) return { w: Math.round(vv.width), h: Math.round(vv.height) };
+  return { w: window.innerWidth, h: window.innerHeight };
+}
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  var vs = viewportSize();
+  W = vs.w; H = vs.h;
+  canvas.width = Math.round(W*DPR); canvas.height = Math.round(H*DPR);
+  canvas.style.width = W+'px'; canvas.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  CX = W/2;
+  /* Reserve space from the layout, not a guessed constant, so the scene
+     composes the same on every phone:
+     - below: room for the gifts and trunk base that hang below groundY,
+       plus a safe margin from the screen's bottom edge. The controls now
+       live on the side rail, so nothing needs reserving for them here and
+       they can never cover the trunk or the gifts;
+     - above: room for the glowing signature and the tree-top star.
+     The tree's own proportions (height from width, radius from height)
+     are untouched. */
+  var bottomMargin = 16;
+  var giftSpace = Math.min(62, Math.max(42, W*0.13));  // gift boxes extend this far below groundY
+  groundY = H - bottomMargin - giftSpace;
+  var topReserve = Math.min(168, Math.max(118, H*0.19));
+  treeH = Math.min(groundY - topReserve, W*1.04);
+  if (treeH < 220) treeH = Math.max(180, groundY - topReserve);
+  treeTop = groundY - treeH;
+  maxR = Math.min(W*0.36, treeH*0.44);
+  buildStars();
+  buildSparkles();
+  seedSnow(true);
+  /* signature sits in the open sky between the top of the screen and the
+     star, whatever the screen height — never on the tree, never floating
+     in a pill */
+  var sig = document.getElementById('signature');
+  if (sig){
+    var sigH = sig.offsetHeight || 52;
+    var y = treeTop - sigH - 30;                       // clear gap above the star
+    var minY = Math.max(26, H*0.035);
+    if (y < minY) y = minY;
+    sig.style.top = y+'px';
+  }
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', function(){ setTimeout(resize, 60); });
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+window.addEventListener('load', resize);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(function(){ resize(); });
+
+/* ================= sky stars ================= */
+var stars=[];
+function buildStars(){
+  stars=[];
+  var n = Math.round(W*H/16000);
+  for(var i=0;i<n;i++) stars.push({x:Math.random()*W, y:Math.random()*H*0.55, r:Math.random()*1.3+0.3, p:Math.random()*6.28, s:0.4+Math.random()*1.2});
+}
+
+/* ================= snow-ground sparkles ================= */
+var sparkles=[];
+function buildSparkles(){
+  sparkles=[];
+  if(!W) return;
+  var n=Math.round(W/26), span=Math.max(20, H-groundY-90);
+  for(var i=0;i<n;i++) sparkles.push({x:Math.random()*W, y:groundY+16+Math.random()*span, r:rand(0.6,1.5), p:Math.random()*6.28, s:rand(0.6,1.8)});
+}
+
+/* ================= tree points ================= */
+var foliage=[], lights=[];
+(function buildTree(){
+  var i,t,a,r;
+  // foliage: volumetric cone — angle fully random, radius fills the cone at each height
+  for(i=0;i<2800;i++){
+    t = Math.pow(Math.random(),0.8);
+    a = Math.random()*Math.PI*2;
+    r = t * (0.30 + 0.70*Math.sqrt(Math.random()));   // denser core, full silhouette
+    foliage.push({t:t, a:a, r:r, sz:rand(0.8,2.0), hue:rand(-14,16)});
+  }
+  // a soft outer shell so the silhouette reads crisp
+  for(i=0;i<700;i++){
+    t = Math.random();
+    a = Math.random()*Math.PI*2;
+    foliage.push({t:t, a:a, r:t*rand(0.9,1.0), sz:rand(0.7,1.4), hue:rand(-10,14)});
+  }
+  // lights: clean spiral ON the cone surface (radius scales with height t)
+  for(i=0;i<300;i++){
+    t = i/300;
+    lights.push({t:t, a:t*28 + rand(-0.12,0.12), r:t*1.01, idx:i, ph:Math.random()*6.28});
+  }
+})();
+var PALETTES={
+  classic:['#ff5a5a','#ffd166','#5ee08a','#57b6ff','#ff9de2','#fff3b0'],
+  gold:['#ffdf9e','#ffc95e','#fff6d8','#ffb347','#ffe9b8'],
+  ice:['#bfe9ff','#7fd4ff','#e8fbff','#9be8d8','#ffffff']
+};
+var palette='classic';
+
+/* ================= orbiting snow crystals ================= */
+var crystals=[];
+for(var ci=0;ci<14;ci++){
+  crystals.push({
+    orbitR: rand(0.78,1.42),
+    h: Math.random(),
+    ang: Math.random()*6.283,
+    orbitSpd: rand(0.10,0.30),
+    size: rand(10,21),
+    rot: Math.random()*6.283,
+    rotSpd: rand(0.3,1.0)*(Math.random()<0.5?-1:1),
+    bobPh: Math.random()*6.283,
+    alpha: rand(0.6,1)
+  });
+}
+var showOrbit=true;
+
+/* ================= full-screen snowfall ================= */
+var SNOW_N=200, snow=[], showSnow=true;
+function seedSnow(first){
+  if(!W) return;
+  if(!first && snow.length) return;
+  snow=[];
+  for(var i=0;i<SNOW_N;i++){
+    var depth=Math.random();
+    snow.push({
+      x:Math.random()*W, y:Math.random()*H, d:depth,
+      r:0.7+depth*depth*2.8,
+      spd:16+depth*52,
+      swayPh:Math.random()*6.283, swayAmp:8+depth*22, swaySpd:rand(0.3,0.9),
+      o:0.25+depth*0.65, spin:Math.random()*6.283
+    });
+  }
+}
+/* a few large, very soft foreground flakes (radial gradient, no hard edge) */
+var fore=[];
+for(var fj=0;fj<6;fj++) fore.push({x:Math.random(), y:Math.random(), r:rand(16,34), spd:rand(10,20), ph:Math.random()*6.28});
+
+/* ================= bursts ================= */
+var bursts=[];
+function burst(x,y,n){
+  for(var i=0;i<(n||26);i++){
+    var a=Math.random()*6.283, v=rand(30,190);
+    bursts.push({x:x,y:y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-40,life:1,decay:rand(0.5,1.1),
+      sz:rand(1,3.2), col:PALETTES[palette][i%PALETTES[palette].length], star:Math.random()<0.3, rot:Math.random()*6.28});
+  }
+}
+
+/* ================= interaction ================= */
+var BASE_VEL = reduced?0.05:0.22;
+var rot=0, vel=BASE_VEL, autoSpin=true;
+var pressing=false, dragActive=false, lastX=0, downX=0, downY=0, dragVel=0;
+/* 点按停顿 — the viewer's choice, off by default. A plain tap bursts stars
+   and never touches the spin: no freeze while the finger is down, no
+   velocity reset on release, so the tree never checks its stride. Turn it
+   on and a tap instead eases the tree to a brief, deliberate stop. */
+var pauseOnTap=false, pauseLeft=0;
+canvas.addEventListener('pointerdown', function(e){
+  pressing=true; dragActive=false; lastX=e.clientX; downX=e.clientX; downY=e.clientY; dragVel=0;
+  try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
+});
+canvas.addEventListener('pointermove', function(e){
+  if(!pressing) return;
+  var dx=e.clientX-lastX; lastX=e.clientX;
+  if(!dragActive && Math.abs(e.clientX-downX)+Math.abs(e.clientY-downY)>8) dragActive=true;
+  if(dragActive){ rot += dx*0.008; dragVel = dragVel*0.65 + dx*0.004*0.35; }
+});
+function endDrag(e){
+  if(pressing && !dragActive){
+    burst(e.clientX, e.clientY, 30);
+    if(pauseOnTap) pauseLeft = 0.9;
+  } else if(dragActive){
+    vel = Math.max(-1.4, Math.min(1.4, dragVel));
+  }
+  pressing=false; dragActive=false;
+}
+canvas.addEventListener('pointerup', endDrag);
+canvas.addEventListener('pointercancel', function(){ pressing=false; dragActive=false; });
+
+document.querySelectorAll('[data-palette]').forEach(function(b){
+  b.addEventListener('click', function(){
+    document.querySelectorAll('[data-palette]').forEach(function(x){x.setAttribute('aria-pressed','false');});
+    b.setAttribute('aria-pressed','true'); palette=b.dataset.palette;
+    burst(CX, treeTop+treeH*0.45, 36);
+  });
+});
+var btnSnow=document.getElementById('btnSnow'), btnOrbit=document.getElementById('btnOrbit'), btnSpin=document.getElementById('btnSpin');
+btnSnow.addEventListener('click', function(){ showSnow=!showSnow; btnSnow.setAttribute('aria-pressed', String(showSnow)); });
+btnOrbit.addEventListener('click', function(){ showOrbit=!showOrbit; btnOrbit.setAttribute('aria-pressed', String(showOrbit)); });
+btnSpin.addEventListener('click', function(){ autoSpin=!autoSpin; btnSpin.setAttribute('aria-pressed', String(autoSpin)); });
+var btnPause=document.getElementById('btnPause');
+btnPause.addEventListener('click', function(){ pauseOnTap=!pauseOnTap; btnPause.setAttribute('aria-pressed', String(pauseOnTap)); if(!pauseOnTap) pauseLeft=0; });
+setTimeout(function(){ document.getElementById('hint').style.opacity='0'; }, 5200);
+
+/* ================= drawing helpers ================= */
+function shade(hex, amt){
+  var n=parseInt(hex.slice(1),16), r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  if(amt>=0){ r+=(255-r)*amt; g+=(255-g)*amt; b+=(255-b)*amt; } else { r*=1+amt; g*=1+amt; b*=1+amt; }
+  return 'rgb('+Math.round(r)+','+Math.round(g)+','+Math.round(b)+')';
+}
+function drawSnowflake(x,y,size,rotA,alpha,glow){
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(rotA);
+  ctx.globalAlpha=alpha;
+  ctx.strokeStyle='#eaf6ff'; ctx.lineCap='round';
+  if(glow){ ctx.shadowColor='rgba(150,210,255,0.95)'; ctx.shadowBlur=13; }
+  var s=size;
+  ctx.lineWidth=Math.max(1, s*0.09);
+  for(var k=0;k<6;k++){
+    ctx.save(); ctx.rotate(k*Math.PI/3);
+    ctx.beginPath();
+    ctx.moveTo(0,0); ctx.lineTo(0,-s);
+    var b1=s*0.42, b2=s*0.68, w1=s*0.30, w2=s*0.22;
+    ctx.moveTo(0,-b1); ctx.lineTo(-w1,-b1-w1*0.8);
+    ctx.moveTo(0,-b1); ctx.lineTo( w1,-b1-w1*0.8);
+    ctx.moveTo(0,-b2); ctx.lineTo(-w2,-b2-w2*0.8);
+    ctx.moveTo(0,-b2); ctx.lineTo( w2,-b2-w2*0.8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0,-s-s*0.14); ctx.lineTo(s*0.09,-s); ctx.lineTo(0,-s+s*0.14); ctx.lineTo(-s*0.09,-s);
+    ctx.closePath(); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.beginPath();
+  for(var m=0;m<6;m++){ var px=Math.cos(m*Math.PI/3)*s*0.16, py=Math.sin(m*Math.PI/3)*s*0.16; m?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+  ctx.closePath(); ctx.stroke();
+  ctx.restore();
+}
+function drawStar(x,y,r,rotA){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rotA);
+  ctx.shadowColor='rgba(255,214,120,1)'; ctx.shadowBlur=26;
+  ctx.fillStyle='#ffe9a8';
+  ctx.beginPath();
+  for(var i=0;i<10;i++){
+    var rr=i%2? r*0.45 : r, a=i*Math.PI/5 - Math.PI/2;
+    i?ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr):ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);
+  }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function project(p){
+  var a=p.a + rot;
+  var rad=p.r * maxR;
+  var x3=Math.cos(a)*rad, z3=Math.sin(a)*rad;
+  var persp=1 + z3/(treeH*2.6);
+  return { x:CX + x3*persp, y:treeTop + p.t*treeH, z:z3, s:persp };
+}
+function drawPineRow(baseY, hgt, alpha){
+  ctx.save(); ctx.globalAlpha=alpha; ctx.fillStyle='#061423';
+  var step=hgt*1.15, x=-step, seed=0;
+  while(x < W+step){
+    seed++;
+    var hh=hgt*(0.75+((seed*37)%40)/80);
+    ctx.beginPath();
+    ctx.moveTo(x, baseY);
+    ctx.lineTo(x+hh*0.34, baseY-hh*0.55); ctx.lineTo(x+hh*0.16, baseY-hh*0.55);
+    ctx.lineTo(x+hh*0.30, baseY-hh);       ctx.lineTo(x+hh*0.46, baseY-hh*0.55);
+    ctx.lineTo(x+hh*0.30, baseY-hh*0.55);  ctx.lineTo(x+hh*0.62, baseY);
+    ctx.closePath(); ctx.fill();
+    x += step*(0.8+((seed*53)%30)/60);
+  }
+  ctx.restore();
+}
+function drawGift(x,y,s,body,ribbon,time,ph){
+  var bob=Math.sin(time*1.6+ph)*1.2;
+  ctx.save(); ctx.translate(x,y+bob);
+  var Hh=s*0.78, lidH=s*0.20;
+  /* soft contact shadow — radial falloff, no hard edge */
+  var sh=ctx.createRadialGradient(s*0.5,s*0.99,1,s*0.5,s*0.99,s*0.66);
+  sh.addColorStop(0,'rgba(5,14,28,0.45)'); sh.addColorStop(1,'rgba(5,14,28,0)');
+  ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(s*0.5,s*0.99,s*0.66,s*0.16,0,0,6.283); ctx.fill();
+  /* body: vertical light falloff so it reads as a volume, not a sticker */
+  var bg=ctx.createLinearGradient(0,lidH,0,Hh);
+  bg.addColorStop(0,shade(body,0.14)); bg.addColorStop(0.5,body); bg.addColorStop(1,shade(body,-0.30));
+  ctx.fillStyle=bg; ctx.fillRect(0,lidH,s,Hh-lidH);
+  var side=ctx.createLinearGradient(s*0.7,0,s,0);
+  side.addColorStop(0,'rgba(0,0,0,0)'); side.addColorStop(1,'rgba(0,0,0,0.24)');
+  ctx.fillStyle=side; ctx.fillRect(s*0.7,lidH,s*0.3,Hh-lidH);
+  var warm=ctx.createLinearGradient(0,0,s*0.42,0);
+  warm.addColorStop(0,'rgba(255,206,120,0.12)'); warm.addColorStop(1,'rgba(255,206,120,0)');
+  ctx.fillStyle=warm; ctx.fillRect(0,lidH,s*0.42,Hh-lidH);
+  /* ribbon down the body, with a lit centre */
+  var rg=ctx.createLinearGradient(s*0.42,0,s*0.58,0);
+  rg.addColorStop(0,shade(ribbon,-0.15)); rg.addColorStop(0.5,shade(ribbon,0.22)); rg.addColorStop(1,shade(ribbon,-0.15));
+  ctx.fillStyle=rg; ctx.fillRect(s*0.42,lidH,s*0.16,Hh-lidH);
+  /* lid: lighter top, ribbon crossing it, shadow seam beneath */
+  var lg=ctx.createLinearGradient(0,0,0,lidH);
+  lg.addColorStop(0,shade(body,0.34)); lg.addColorStop(1,shade(body,0.04));
+  ctx.fillStyle=lg; ctx.fillRect(-s*0.05,0,s*1.1,lidH);
+  ctx.fillStyle=rg; ctx.fillRect(s*0.42,0,s*0.16,lidH);
+  ctx.fillStyle=shade(ribbon,0.10); ctx.fillRect(-s*0.05,lidH*0.32,s*1.1,lidH*0.36);
+  ctx.fillStyle='rgba(0,0,0,0.20)'; ctx.fillRect(-s*0.05,lidH,s*1.1,Math.max(1,s*0.028));
+  /* bow */
+  ctx.strokeStyle=shade(ribbon,0.12); ctx.lineWidth=Math.max(1.4,s*0.05);
+  ctx.beginPath(); ctx.ellipse(s*0.38,s*0.0,s*0.13,s*0.07,-0.5,0,6.283); ctx.ellipse(s*0.62,s*0.0,s*0.13,s*0.07,0.5,0,6.283); ctx.stroke();
+  ctx.fillStyle=shade(ribbon,0.05); ctx.beginPath(); ctx.arc(s*0.5,s*0.0,s*0.045,0,6.283); ctx.fill();
+  ctx.restore();
+}
+function drawCrystals(time, behind){
+  for(var i=0;i<crystals.length;i++){
+    var cr=crystals[i];
+    var isBehind = Math.sin(cr.ang) < 0;
+    if(isBehind !== behind) continue;
+    var x = CX + Math.cos(cr.ang)*cr.orbitR*maxR;
+    var y = treeTop + cr.h*treeH*0.92 + 16 + Math.sin(time*0.9 + cr.bobPh)*8;
+    var depthK=(Math.sin(cr.ang)+1)/2;
+    var scale=0.55 + depthK*0.65;
+    var a=cr.alpha*(0.35 + depthK*0.65);
+    // soft glow: radial gradient, no hard disc edge
+    var gr=cr.size*scale*2.1;
+    var rg=ctx.createRadialGradient(x,y,0,x,y,gr);
+    rg.addColorStop(0,'rgba(170,220,255,'+(a*0.20)+')'); rg.addColorStop(1,'rgba(170,220,255,0)');
+    ctx.fillStyle=rg; ctx.beginPath(); ctx.arc(x,y,gr,0,6.283); ctx.fill();
+    drawSnowflake(x, y, cr.size*scale, cr.rot, a, true);
+  }
+}
+
+/* ================= main loop ================= */
+var last=performance.now();
+function frame(now){
+  var dt=Math.min((now-last)/1000, 0.05); last=now;
+  var time=now/1000;
+  if(!dragActive){
+    var target = autoSpin ? BASE_VEL : 0;
+    if(pauseLeft>0){ pauseLeft-=dt; target=0; }
+    vel += (target-vel)*(1-Math.exp(-dt*5));
+    rot += vel*dt*3.2;
+  }
+
+  /* background */
+  var g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#040a16'); g.addColorStop(0.55,'#081728'); g.addColorStop(1,'#0a1f33');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  /* moon + soft halo (arc-clipped, no rect seam) */
+  var mx=W*0.82, my=H*0.13, mr=Math.min(W,H)*0.045;
+  var mg=ctx.createRadialGradient(mx,my,mr*0.4,mx,my,mr*4.2);
+  mg.addColorStop(0,'rgba(220,238,255,0.20)'); mg.addColorStop(1,'rgba(220,238,255,0)');
+  ctx.fillStyle=mg; ctx.beginPath(); ctx.arc(mx,my,mr*4.2,0,6.283); ctx.fill();
+  ctx.fillStyle='#e9f3fd'; ctx.beginPath(); ctx.arc(mx,my,mr,0,6.283); ctx.fill();
+  ctx.fillStyle='rgba(190,214,238,0.5)'; ctx.beginPath(); ctx.arc(mx-mr*0.3,my-mr*0.2,mr*0.16,0,6.283); ctx.arc(mx+mr*0.25,my+mr*0.3,mr*0.11,0,6.283); ctx.fill();
+  /* stars */
+  for(var i=0;i<stars.length;i++){ var st=stars[i]; ctx.globalAlpha=0.35+0.6*Math.abs(Math.sin(time*st.s+st.p)); ctx.fillStyle='#dcecff'; ctx.beginPath(); ctx.arc(st.x,st.y,st.r,0,6.283); ctx.fill(); }
+  ctx.globalAlpha=1;
+  /* distant pines sitting on the snow line */
+  drawPineRow(groundY+14, Math.max(26,H*0.05), 0.55);
+  drawPineRow(groundY+18, Math.max(36,H*0.07), 0.9);
+  /* snow ground */
+  var gg=ctx.createLinearGradient(0,groundY-14,0,H);
+  gg.addColorStop(0,'#cfe2f2'); gg.addColorStop(0.25,'#9dbfdd'); gg.addColorStop(1,'#5f83a6');
+  ctx.fillStyle=gg;
+  ctx.beginPath(); ctx.moveTo(0,groundY+10);
+  ctx.bezierCurveTo(W*0.25,groundY-12, W*0.4,groundY+16, W*0.62,groundY+2);
+  ctx.bezierCurveTo(W*0.8,groundY-10, W*0.92,groundY+12, W,groundY+4);
+  ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath(); ctx.fill();
+  /* warm glow pool under tree — ellipse-clipped so no band seam */
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(CX,groundY+22,maxR*1.45,maxR*0.20,0,0,6.283); ctx.clip();
+  var pg=ctx.createRadialGradient(CX,groundY+22,6,CX,groundY+22,maxR*1.45);
+  pg.addColorStop(0,'rgba(255,205,110,0.20)'); pg.addColorStop(1,'rgba(255,205,110,0)');
+  ctx.fillStyle=pg; ctx.fillRect(CX-maxR*1.45,groundY+22-maxR*0.20,maxR*2.9,maxR*0.40);
+  ctx.restore();
+
+  /* snow sparkles on the ground */
+  for(var sp=0;sp<sparkles.length;sp++){
+    var sk=sparkles[sp];
+    ctx.globalAlpha=(0.15+0.55*Math.abs(Math.sin(time*sk.s+sk.p)));
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath(); ctx.arc(sk.x, sk.y, sk.r, 0, 6.283); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+
+  /* crystals behind tree */
+  if(showOrbit){
+    for(var c=0;c<crystals.length;c++){ crystals[c].ang += crystals[c].orbitSpd*dt; crystals[c].rot += crystals[c].rotSpd*dt; }
+    drawCrystals(time, true);
+  }
+
+  /* tree foliage, back→front */
+  var pts=[];
+  for(var f=0;f<foliage.length;f++){ var pr=project(foliage[f]); pr.p=foliage[f]; pts.push(pr); }
+  pts.sort(function(a,b){return a.z-b.z;});
+  for(var q=0;q<pts.length;q++){
+    var pt=pts[q], p=pt.p;
+    var depthK=(pt.z/Math.max(maxR,1)+1)/2;
+    var green=100 + p.hue + depthK*44;
+    ctx.fillStyle='rgba('+(16+depthK*18)+','+Math.round(green)+','+(50+depthK*28)+','+(0.4+depthK*0.6)+')';
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, p.sz*pt.s*(0.8+depthK*0.5), 0, 6.283); ctx.fill();
+  }
+  /* trunk — tapered bark with shading, ridges and a warm rim from the lights */
+  var tw=maxR*0.11, ty0=groundY-treeH*0.02, ty1=groundY+treeH*0.05;
+  var tsh=ctx.createRadialGradient(CX,groundY+22,4,CX,groundY+22,maxR*0.95);
+  tsh.addColorStop(0,'rgba(7,16,32,0.38)'); tsh.addColorStop(1,'rgba(7,16,32,0)');
+  ctx.save(); ctx.beginPath(); ctx.ellipse(CX,groundY+22,maxR*0.95,maxR*0.15,0,0,6.283); ctx.clip();
+  ctx.fillStyle=tsh; ctx.fillRect(CX-maxR,groundY+22-maxR*0.15,maxR*2,maxR*0.3); ctx.restore();
+  function trunkPath(){
+    ctx.beginPath();
+    ctx.moveTo(CX-tw*0.36,ty0); ctx.lineTo(CX+tw*0.36,ty0);
+    ctx.lineTo(CX+tw*0.8,ty1); ctx.lineTo(CX-tw*0.8,ty1);
+    ctx.closePath();
+  }
+  var bark=ctx.createLinearGradient(CX-tw*0.8,0,CX+tw*0.8,0);
+  bark.addColorStop(0,'#2a170b'); bark.addColorStop(0.35,'#5d3a20'); bark.addColorStop(0.65,'#7a4f2a'); bark.addColorStop(1,'#221204');
+  ctx.fillStyle=bark; trunkPath(); ctx.fill();
+  ctx.save(); trunkPath(); ctx.clip();
+  ctx.strokeStyle='rgba(18,9,3,0.4)'; ctx.lineWidth=Math.max(1,tw*0.08); ctx.lineCap='round';
+  var rk=[-0.42,0.02,0.44];
+  for(var ri=0;ri<3;ri++){ ctx.beginPath(); ctx.moveTo(CX+tw*rk[ri]*0.6,ty0+1); ctx.lineTo(CX+tw*rk[ri]*1.35,ty1-1); ctx.stroke(); }
+  var rim=ctx.createLinearGradient(CX+tw*0.25,0,CX+tw*0.85,0);
+  rim.addColorStop(0,'rgba(255,198,112,0)'); rim.addColorStop(1,'rgba(255,198,112,0.30)');
+  ctx.fillStyle=rim; ctx.fillRect(CX+tw*0.25,ty0,tw*0.6,ty1-ty0);
+  ctx.restore();
+  /* snow drifted against the base */
+  ctx.fillStyle='rgba(228,240,252,0.95)';
+  ctx.beginPath(); ctx.ellipse(CX,ty1,maxR*0.16,maxR*0.035,0,0,6.283); ctx.fill();
+  ctx.fillStyle='rgba(200,222,246,0.8)';
+  ctx.beginPath(); ctx.ellipse(CX-maxR*0.13,ty1+3,maxR*0.09,maxR*0.022,0,0,6.283); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(CX+maxR*0.14,ty1+2,maxR*0.08,maxR*0.02,0,0,6.283); ctx.fill();
+
+  /* lights — chasing twinkle along the spiral */
+  var cols=PALETTES[palette], lp=[];
+  for(var L=0;L<lights.length;L++){ var pr2=project(lights[L]); pr2.p=lights[L]; lp.push(pr2); }
+  lp.sort(function(a,b){return a.z-b.z;});
+  for(var n=0;n<lp.length;n++){
+    var li=lp[n], pl=li.p;
+    var bright=(0.5+0.5*Math.sin(time*3.2 - pl.idx*0.55))*(0.55+0.45*Math.sin(time*2.1+pl.ph));
+    var col=cols[pl.idx % cols.length];
+    var r=(1.6+bright*2.4)*li.s;
+    ctx.save();
+    ctx.shadowColor=col; ctx.shadowBlur=6+bright*20;
+    ctx.globalAlpha=0.35+bright*0.65; ctx.fillStyle=col;
+    ctx.beginPath(); ctx.arc(li.x, li.y, r, 0, 6.283); ctx.fill();
+    ctx.restore();
+    if(bright>0.82){ ctx.globalAlpha=(bright-0.82)*2.2; ctx.fillStyle='#ffffff'; ctx.beginPath(); ctx.arc(li.x,li.y,r*0.4,0,6.283); ctx.fill(); ctx.globalAlpha=1; }
+  }
+
+  /* gifts */
+  drawGift(CX-maxR*0.52, groundY+14, maxR*0.20, '#8e2434', '#ffd98a', time, 0);
+  drawGift(CX+maxR*0.34, groundY+18, maxR*0.26, '#1d4e3a', '#ff8a7a', time, 2.1);
+  drawGift(CX-maxR*0.08, groundY+24, maxR*0.17, '#274b73', '#bfe9ff', time, 4.2);
+
+  /* top star */
+  var pulse=1 + Math.sin(time*2.2)*0.10;
+  drawStar(CX, treeTop-8, Math.min(26, maxR*0.13)*pulse, Math.sin(time*0.7)*0.16);
+  ctx.save(); ctx.globalAlpha=0.10+0.05*Math.sin(time*2.2); ctx.strokeStyle='#ffe9a8'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.arc(CX, treeTop-8, 30*pulse+Math.sin(time*1.4)*3, 0, 6.283); ctx.stroke(); ctx.restore();
+
+  /* crystals in front */
+  if(showOrbit) drawCrystals(time, false);
+
+  /* snowfall — full screen, layered, smooth */
+  if(showSnow){
+    for(var b=0;b<fore.length;b++){
+      var fl=fore[b];
+      fl.y += fl.spd*dt/H; fl.x += Math.sin(time*0.4+fl.ph)*0.00012;
+      if(fl.y>1.08){ fl.y=-0.08; fl.x=Math.random(); }
+      var fx=fl.x*W, fy=fl.y*H;
+      var fg=ctx.createRadialGradient(fx,fy,0,fx,fy,fl.r);
+      fg.addColorStop(0,'rgba(240,248,255,0.13)'); fg.addColorStop(1,'rgba(240,248,255,0)');
+      ctx.fillStyle=fg; ctx.beginPath(); ctx.arc(fx,fy,fl.r,0,6.283); ctx.fill();
+    }
+    for(var s2=0;s2<snow.length;s2++){
+      var sn=snow[s2];
+      sn.y += sn.spd*dt;
+      sn.swayPh += sn.swaySpd*dt;
+      if(sn.y>H+6){ sn.y=-6; sn.x=Math.random()*W; }
+      var sx=sn.x + Math.sin(sn.swayPh)*sn.swayAmp;
+      if(sn.d>0.86){
+        drawSnowflake(sx, sn.y, sn.r*2.1, sn.spin+time*0.3, sn.o*0.9, false);
+      } else {
+        ctx.globalAlpha=sn.o; ctx.fillStyle='#f2f8ff';
+        ctx.beginPath(); ctx.arc(sx, sn.y, sn.r, 0, 6.283); ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+
+  /* bursts */
+  for(var u=bursts.length-1;u>=0;u--){
+    var bp=bursts[u];
+    bp.x+=bp.vx*dt; bp.y+=bp.vy*dt; bp.vy+=190*dt; bp.vx*=0.985; bp.life-=bp.decay*dt; bp.rot+=dt*3;
+    if(bp.life<=0){ bursts.splice(u,1); continue; }
+    ctx.save(); ctx.globalAlpha=Math.max(bp.life,0); ctx.translate(bp.x,bp.y); ctx.rotate(bp.rot);
+    ctx.fillStyle=bp.col; ctx.shadowColor=bp.col; ctx.shadowBlur=8;
+    if(bp.star){
+      ctx.beginPath();
+      for(var v=0;v<8;v++){ var rr=v%2?bp.sz*0.4:bp.sz*1.7, aa=v*Math.PI/4; v?ctx.lineTo(Math.cos(aa)*rr,Math.sin(aa)*rr):ctx.moveTo(Math.cos(aa)*rr,Math.sin(aa)*rr); }
+      ctx.closePath(); ctx.fill();
+    } else { ctx.beginPath(); ctx.arc(0,0,bp.sz,0,6.283); ctx.fill(); }
+    ctx.restore();
+  }
+
+  requestAnimationFrame(frame);
+}
+setInterval(function(){ if(!reduced && Math.random()<0.6) burst(CX+rand(-14,14), treeTop-8, 10); }, 3400);
+
+resize();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
