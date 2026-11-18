@@ -107,11 +107,15 @@
     <button type="button" data-palette="gold" aria-pressed="false">暖金</button>
     <button type="button" data-palette="ice" aria-pressed="false">冰晶</button>
   </div>
+  <div class="group" role="group" aria-label="树体颜色">
+    <button type="button" data-theme="green" aria-pressed="true">原色</button>
+    <button type="button" data-theme="lavender" aria-pressed="false">淡紫</button>
+    <button type="button" data-theme="pink" aria-pressed="false">粉红</button>
+  </div>
   <div class="group" role="group" aria-label="特效开关">
     <button type="button" id="btnSnow" aria-pressed="true">飘雪</button>
     <button type="button" id="btnOrbit" aria-pressed="true">环绕雪晶</button>
     <button type="button" id="btnSpin" aria-pressed="true">旋转</button>
-    <button type="button" id="btnPause" aria-pressed="false">点按停顿</button>
   </div>
 </div>
 
@@ -222,6 +226,22 @@ var PALETTES={
 };
 var palette='classic';
 
+/* ================= tree body colour themes =================
+   green is the original foliage formula, untouched. Each theme drives the
+   foliage particle colours, the tree-top ornament (star / moon / heart)
+   and the colour of the sparkles that burst from the top. */
+var THEMES={
+  green:   {r0:16,  rK:18, g0:100, gK:44, b0:50,  bK:28, hueK:1},
+  lavender:{r0:96,  rK:48, g0:74,  gK:30, b0:168, bK:58, hueK:0.5},
+  pink:    {r0:196, rK:44, g0:92,  gK:38, b0:138, bK:44, hueK:0.5}
+};
+var THEME_BURST={
+  green:null,
+  lavender:['#cdbcf5','#e9e2ff','#a78bfa','#ffffff'],
+  pink:['#ff8fab','#ffb3c6','#ff5d8f','#ffe3ec']
+};
+var treeTheme='green';
+
 /* ================= orbiting snow crystals ================= */
 var crystals=[];
 for(var ci=0;ci<14;ci++){
@@ -262,11 +282,12 @@ for(var fj=0;fj<6;fj++) fore.push({x:Math.random(), y:Math.random(), r:rand(16,3
 
 /* ================= bursts ================= */
 var bursts=[];
-function burst(x,y,n){
+function burst(x,y,n,cols){
+  cols = cols || PALETTES[palette];
   for(var i=0;i<(n||26);i++){
     var a=Math.random()*6.283, v=rand(30,190);
     bursts.push({x:x,y:y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-40,life:1,decay:rand(0.5,1.1),
-      sz:rand(1,3.2), col:PALETTES[palette][i%PALETTES[palette].length], star:Math.random()<0.3, rot:Math.random()*6.28});
+      sz:rand(1,3.2), col:cols[i%cols.length], star:Math.random()<0.3, rot:Math.random()*6.28});
   }
 }
 
@@ -274,11 +295,9 @@ function burst(x,y,n){
 var BASE_VEL = reduced?0.05:0.22;
 var rot=0, vel=BASE_VEL, autoSpin=true;
 var pressing=false, dragActive=false, lastX=0, downX=0, downY=0, dragVel=0;
-/* 点按停顿 — the viewer's choice, off by default. A plain tap bursts stars
-   and never touches the spin: no freeze while the finger is down, no
-   velocity reset on release, so the tree never checks its stride. Turn it
-   on and a tap instead eases the tree to a brief, deliberate stop. */
-var pauseOnTap=false, pauseLeft=0;
+/* A plain tap only bursts stars and never touches the spin: no freeze
+   while the finger is down, no velocity reset on release, so the tree
+   never checks its stride. */
 canvas.addEventListener('pointerdown', function(e){
   pressing=true; dragActive=false; lastX=e.clientX; downX=e.clientX; downY=e.clientY; dragVel=0;
   try{ canvas.setPointerCapture(e.pointerId); }catch(_){}
@@ -292,7 +311,6 @@ canvas.addEventListener('pointermove', function(e){
 function endDrag(e){
   if(pressing && !dragActive){
     burst(e.clientX, e.clientY, 30);
-    if(pauseOnTap) pauseLeft = 0.9;
   } else if(dragActive){
     vel = Math.max(-1.4, Math.min(1.4, dragVel));
   }
@@ -312,8 +330,13 @@ var btnSnow=document.getElementById('btnSnow'), btnOrbit=document.getElementById
 btnSnow.addEventListener('click', function(){ showSnow=!showSnow; btnSnow.setAttribute('aria-pressed', String(showSnow)); });
 btnOrbit.addEventListener('click', function(){ showOrbit=!showOrbit; btnOrbit.setAttribute('aria-pressed', String(showOrbit)); });
 btnSpin.addEventListener('click', function(){ autoSpin=!autoSpin; btnSpin.setAttribute('aria-pressed', String(autoSpin)); });
-var btnPause=document.getElementById('btnPause');
-btnPause.addEventListener('click', function(){ pauseOnTap=!pauseOnTap; btnPause.setAttribute('aria-pressed', String(pauseOnTap)); if(!pauseOnTap) pauseLeft=0; });
+document.querySelectorAll('[data-theme]').forEach(function(b){
+  b.addEventListener('click', function(){
+    document.querySelectorAll('[data-theme]').forEach(function(x){x.setAttribute('aria-pressed','false');});
+    b.setAttribute('aria-pressed','true'); treeTheme=b.dataset.theme;
+    burst(CX, treeTop-8, 30, THEME_BURST[treeTheme]);
+  });
+});
 setTimeout(function(){ document.getElementById('hint').style.opacity='0'; }, 5200);
 
 /* ================= drawing helpers ================= */
@@ -359,6 +382,34 @@ function drawStar(x,y,r,rotA){
     var rr=i%2? r*0.45 : r, a=i*Math.PI/5 - Math.PI/2;
     i?ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr):ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);
   }
+  ctx.closePath(); ctx.fill(); ctx.restore();
+}
+/* crescent moon: cut on an offscreen sprite so the bite stays transparent
+   and the real night sky shows through it */
+var moonSprite=null;
+function drawMoon(x,y,r,rotA){
+  if(!moonSprite){
+    moonSprite=document.createElement('canvas'); moonSprite.width=moonSprite.height=160;
+    var m=moonSprite.getContext('2d');
+    m.fillStyle='#eae3ff';
+    m.beginPath(); m.arc(80,80,60,0,6.283); m.fill();
+    m.globalCompositeOperation='destination-out';
+    m.beginPath(); m.arc(106,64,50,0,6.283); m.fill();
+  }
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rotA);
+  ctx.shadowColor='rgba(190,170,255,0.95)'; ctx.shadowBlur=24;
+  var d=r*2.6;
+  ctx.drawImage(moonSprite, -d/2, -d/2, d, d);
+  ctx.restore();
+}
+function drawHeart(x,y,r,rotA){
+  ctx.save(); ctx.translate(x,y); ctx.rotate(rotA);
+  ctx.shadowColor='rgba(255,93,143,0.95)'; ctx.shadowBlur=26;
+  ctx.fillStyle='#ff6b9d';
+  ctx.beginPath();
+  ctx.moveTo(0, r*0.85);
+  ctx.bezierCurveTo(-r*1.25, r*0.05, -r*0.72, -r*0.92, 0, -r*0.32);
+  ctx.bezierCurveTo( r*0.72, -r*0.92,  r*1.25, r*0.05, 0,  r*0.85);
   ctx.closePath(); ctx.fill(); ctx.restore();
 }
 function project(p){
@@ -445,7 +496,6 @@ function frame(now){
   var time=now/1000;
   if(!dragActive){
     var target = autoSpin ? BASE_VEL : 0;
-    if(pauseLeft>0){ pauseLeft-=dt; target=0; }
     vel += (target-vel)*(1-Math.exp(-dt*5));
     rot += vel*dt*3.2;
   }
@@ -505,8 +555,9 @@ function frame(now){
   for(var q=0;q<pts.length;q++){
     var pt=pts[q], p=pt.p;
     var depthK=(pt.z/Math.max(maxR,1)+1)/2;
-    var green=100 + p.hue + depthK*44;
-    ctx.fillStyle='rgba('+(16+depthK*18)+','+Math.round(green)+','+(50+depthK*28)+','+(0.4+depthK*0.6)+')';
+    var th=THEMES[treeTheme];
+    var gch=th.g0 + p.hue*th.hueK + depthK*th.gK;
+    ctx.fillStyle='rgba('+Math.round(th.r0+depthK*th.rK)+','+Math.round(gch)+','+Math.round(th.b0+depthK*th.bK)+','+(0.4+depthK*0.6)+')';
     ctx.beginPath(); ctx.arc(pt.x, pt.y, p.sz*pt.s*(0.8+depthK*0.5), 0, 6.283); ctx.fill();
   }
   /* trunk — tapered bark with shading, ridges and a warm rim from the lights */
@@ -561,10 +612,14 @@ function frame(now){
   drawGift(CX+maxR*0.34, groundY+18, maxR*0.26, '#1d4e3a', '#ff8a7a', time, 2.1);
   drawGift(CX-maxR*0.08, groundY+24, maxR*0.17, '#274b73', '#bfe9ff', time, 4.2);
 
-  /* top star */
+  /* top ornament — follows the tree colour: 原色 star, 淡紫 moon, 粉红 heart,
+     halo ring tinted to match */
   var pulse=1 + Math.sin(time*2.2)*0.10;
-  drawStar(CX, treeTop-8, Math.min(26, maxR*0.13)*pulse, Math.sin(time*0.7)*0.16);
-  ctx.save(); ctx.globalAlpha=0.10+0.05*Math.sin(time*2.2); ctx.strokeStyle='#ffe9a8'; ctx.lineWidth=1.2;
+  var orad=Math.min(26, maxR*0.13)*pulse, orot=Math.sin(time*0.7)*0.16, ringCol='#ffe9a8';
+  if(treeTheme==='lavender'){ drawMoon(CX, treeTop-8, orad, orot); ringCol='#cdbcf5'; }
+  else if(treeTheme==='pink'){ drawHeart(CX, treeTop-8, orad, orot); ringCol='#ff9ebb'; }
+  else drawStar(CX, treeTop-8, orad, orot);
+  ctx.save(); ctx.globalAlpha=0.10+0.05*Math.sin(time*2.2); ctx.strokeStyle=ringCol; ctx.lineWidth=1.2;
   ctx.beginPath(); ctx.arc(CX, treeTop-8, 30*pulse+Math.sin(time*1.4)*3, 0, 6.283); ctx.stroke(); ctx.restore();
 
   /* crystals in front */
@@ -614,7 +669,7 @@ function frame(now){
 
   requestAnimationFrame(frame);
 }
-setInterval(function(){ if(!reduced && Math.random()<0.6) burst(CX+rand(-14,14), treeTop-8, 10); }, 3400);
+setInterval(function(){ if(!reduced && Math.random()<0.6) burst(CX+rand(-14,14), treeTop-8, 10, THEME_BURST[treeTheme]); }, 3400);
 
 resize();
 requestAnimationFrame(frame);
