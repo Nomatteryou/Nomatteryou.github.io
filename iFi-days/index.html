@@ -301,7 +301,11 @@ function burst(x,y,n,cols){
    first gesture (browsers block audio before any user interaction).
    Dragging stays silent: only taps and button clicks make a sound, and
    each sound is a couple of cheap oscillators, so a tap burst never
-   stalls the rotation. */
+   stalls the rotation. Two strategies, so the ear can tell them apart:
+   colour switches (palette / tree theme) play a melodic two-note bell
+   whose pitch follows the choice; effect toggles (snow / orbit / spin /
+   sound) play a single soft bell note — bright when switched on, low
+   when switched off. A tap on the tree itself is a tiny high sparkle. */
 var sfxOn = true, actx = null;
 function audioCtx(){
   if(actx) return actx;
@@ -335,9 +339,9 @@ function sfxChime(base){ // palette / theme switch: two-note bell
   tone(base, 0.35, 'triangle', 0.12);
   tone(base*1.5, 0.45, 'sine', 0.08, 0.06);
 }
-function sfxToggle(on){  // effect toggles: on = rising blip, off = falling blip
-  if(on) tone(660, 0.12, 'sine', 0.10, 0, 880);
-  else tone(520, 0.12, 'sine', 0.10, 0, 330);
+function sfxToggle(on){  // effect toggles: one soft bell note — bright when on, low when off
+  if(on){ tone(988, 0.28, 'triangle', 0.10); tone(1319, 0.32, 'sine', 0.05, 0.02); }
+  else tone(659, 0.28, 'triangle', 0.09);
 }
 
 /* ================= interaction ================= */
