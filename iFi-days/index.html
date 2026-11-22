@@ -116,6 +116,7 @@
     <button type="button" id="btnSnow" aria-pressed="true">飘雪</button>
     <button type="button" id="btnOrbit" aria-pressed="true">环绕雪晶</button>
     <button type="button" id="btnSpin" aria-pressed="true">旋转</button>
+    <button type="button" id="btnSfx" aria-pressed="true">音效</button>
   </div>
 </div>
 
@@ -293,6 +294,52 @@ function burst(x,y,n,cols){
   }
 }
 
+/* ================= sound effects =================
+   Every discrete interaction gets a short synthesized trigger sound —
+   no audio files, so the page stays a single self-contained file and
+   nothing needs to download. The AudioContext is created lazily on the
+   first gesture (browsers block audio before any user interaction).
+   Dragging stays silent: only taps and button clicks make a sound, and
+   each sound is a couple of cheap oscillators, so a tap burst never
+   stalls the rotation. */
+var sfxOn = true, actx = null;
+function audioCtx(){
+  if(actx) return actx;
+  try{
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC) return null;
+    actx = new AC();
+  }catch(_){ actx = null; }
+  return actx;
+}
+function tone(freq, dur, type, vol, delay, slideTo){
+  if(!sfxOn) return;
+  var ac = audioCtx(); if(!ac) return;
+  if(ac.state === 'suspended'){ ac.resume(); }
+  var t0 = ac.currentTime + (delay||0);
+  var o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || 'sine';
+  o.frequency.setValueAtTime(freq, t0);
+  if(slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol || 0.12, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(ac.destination);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+function sfxTap(){       // canvas tap burst: a tiny high sparkle
+  tone(1568, 0.18, 'sine', 0.10);
+  tone(2093, 0.22, 'sine', 0.06, 0.03);
+}
+function sfxChime(base){ // palette / theme switch: two-note bell
+  tone(base, 0.35, 'triangle', 0.12);
+  tone(base*1.5, 0.45, 'sine', 0.08, 0.06);
+}
+function sfxToggle(on){  // effect toggles: on = rising blip, off = falling blip
+  if(on) tone(660, 0.12, 'sine', 0.10, 0, 880);
+  else tone(520, 0.12, 'sine', 0.10, 0, 330);
+}
+
 /* ================= interaction ================= */
 var BASE_VEL = reduced?0.05:0.22;
 var rot=0, vel=BASE_VEL, autoSpin=true;
@@ -312,6 +359,7 @@ canvas.addEventListener('pointermove', function(e){
 });
 function endDrag(e){
   if(pressing && !dragActive){
+    sfxTap();
     burst(e.clientX, e.clientY, 30);
   } else if(dragActive){
     vel = Math.max(-1.4, Math.min(1.4, dragVel));
@@ -325,17 +373,24 @@ document.querySelectorAll('[data-palette]').forEach(function(b){
   b.addEventListener('click', function(){
     document.querySelectorAll('[data-palette]').forEach(function(x){x.setAttribute('aria-pressed','false');});
     b.setAttribute('aria-pressed','true'); palette=b.dataset.palette;
+    sfxChime({classic:880, gold:784, ice:988}[palette]||880);
     burst(CX, treeTop+treeH*0.45, 36);
   });
 });
 var btnSnow=document.getElementById('btnSnow'), btnOrbit=document.getElementById('btnOrbit'), btnSpin=document.getElementById('btnSpin');
-btnSnow.addEventListener('click', function(){ showSnow=!showSnow; btnSnow.setAttribute('aria-pressed', String(showSnow)); });
-btnOrbit.addEventListener('click', function(){ showOrbit=!showOrbit; btnOrbit.setAttribute('aria-pressed', String(showOrbit)); });
-btnSpin.addEventListener('click', function(){ autoSpin=!autoSpin; btnSpin.setAttribute('aria-pressed', String(autoSpin)); });
+btnSnow.addEventListener('click', function(){ showSnow=!showSnow; btnSnow.setAttribute('aria-pressed', String(showSnow)); sfxToggle(showSnow); });
+btnOrbit.addEventListener('click', function(){ showOrbit=!showOrbit; btnOrbit.setAttribute('aria-pressed', String(showOrbit)); sfxToggle(showOrbit); });
+btnSpin.addEventListener('click', function(){ autoSpin=!autoSpin; btnSpin.setAttribute('aria-pressed', String(autoSpin)); sfxToggle(autoSpin); });
+var btnSfx=document.getElementById('btnSfx');
+btnSfx.addEventListener('click', function(){
+  sfxOn=!sfxOn; btnSfx.setAttribute('aria-pressed', String(sfxOn));
+  if(sfxOn) sfxToggle(true);
+});
 document.querySelectorAll('[data-theme]').forEach(function(b){
   b.addEventListener('click', function(){
     document.querySelectorAll('[data-theme]').forEach(function(x){x.setAttribute('aria-pressed','false');});
     b.setAttribute('aria-pressed','true'); treeTheme=b.dataset.theme;
+    sfxChime({green:880, lavender:1047, pink:1175}[treeTheme]||880);
     burst(CX, treeTop-8, 30, THEME_BURST[treeTheme]);
   });
 });
