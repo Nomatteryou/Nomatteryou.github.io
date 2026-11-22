@@ -116,7 +116,6 @@
     <button type="button" id="btnSnow" aria-pressed="true">飘雪</button>
     <button type="button" id="btnOrbit" aria-pressed="true">环绕雪晶</button>
     <button type="button" id="btnSpin" aria-pressed="true">旋转</button>
-    <button type="button" id="btnSfx" aria-pressed="true">音效</button>
   </div>
 </div>
 
@@ -303,10 +302,10 @@ function burst(x,y,n,cols){
    each sound is a couple of cheap oscillators, so a tap burst never
    stalls the rotation. Two strategies, so the ear can tell them apart:
    colour switches (palette / tree theme) play a melodic two-note bell
-   whose pitch follows the choice; effect toggles (snow / orbit / spin /
-   sound) play a single soft bell note — bright when switched on, low
+   whose pitch follows the choice; effect toggles (snow / orbit / spin)
+   play a single soft bell note — bright when switched on, low
    when switched off. A tap on the tree itself is a tiny high sparkle. */
-var sfxOn = true, actx = null;
+var actx = null;
 function audioCtx(){
   if(actx) return actx;
   try{
@@ -317,7 +316,6 @@ function audioCtx(){
   return actx;
 }
 function tone(freq, dur, type, vol, delay, slideTo){
-  if(!sfxOn) return;
   var ac = audioCtx(); if(!ac) return;
   if(ac.state === 'suspended'){ ac.resume(); }
   var t0 = ac.currentTime + (delay||0);
@@ -385,11 +383,6 @@ var btnSnow=document.getElementById('btnSnow'), btnOrbit=document.getElementById
 btnSnow.addEventListener('click', function(){ showSnow=!showSnow; btnSnow.setAttribute('aria-pressed', String(showSnow)); sfxToggle(showSnow); });
 btnOrbit.addEventListener('click', function(){ showOrbit=!showOrbit; btnOrbit.setAttribute('aria-pressed', String(showOrbit)); sfxToggle(showOrbit); });
 btnSpin.addEventListener('click', function(){ autoSpin=!autoSpin; btnSpin.setAttribute('aria-pressed', String(autoSpin)); sfxToggle(autoSpin); });
-var btnSfx=document.getElementById('btnSfx');
-btnSfx.addEventListener('click', function(){
-  sfxOn=!sfxOn; btnSfx.setAttribute('aria-pressed', String(sfxOn));
-  if(sfxOn) sfxToggle(true);
-});
 document.querySelectorAll('[data-theme]').forEach(function(b){
   b.addEventListener('click', function(){
     document.querySelectorAll('[data-theme]').forEach(function(x){x.setAttribute('aria-pressed','false');});
